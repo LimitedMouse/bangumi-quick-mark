@@ -1,0 +1,16 @@
+node_modules/
+output/
+release/
+.playwright-cli/
+*.log
+intro/
+*.zip
+*.har
+*.trace
+*-backup.json
+*storage-state*.json
+*auth-state*.json
+.env
+.env.*
+.auth/
+playwright/.auth/
