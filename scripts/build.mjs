@@ -7,7 +7,7 @@ const metadata=`// ==UserScript==
 // @name         Bangumi 快速补标
 // @namespace    local.bangumi.quickmark
 // @version      ${pkg.version}
-// @description  多分类顺序补标、数字键评分、可配置快捷键与滚轮、异步保存、快速删除收藏及进度恢复。
+// @description  支持榜单和他人时间胶囊顺序补标、数字键评分、异步保存及进度恢复。
 // @author       © 复旦沸点技术组-风吟雨
 // @license      MIT
 // @homepageURL  https://github.com/LimitedMouse/bangumi-quick-mark

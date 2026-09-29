@@ -15,8 +15,16 @@ class Network {
 }
 class Site {
   network=new Network();
+  subjects=new Map();
   constructor(user){this.user=user;}
   async doc(path,priority=1){return new DOMParser().parseFromString(await (await this.network.request(path,{},priority)).text(),'text/html');}
+  subject(id,priority=1){
+    if(this.subjects.has(id))return this.subjects.get(id);
+    const request=this.doc('/subject/'+id,priority);this.subjects.set(id,request);
+    request.catch(()=>{if(this.subjects.get(id)===request)this.subjects.delete(id);});
+    while(this.subjects.size>80)this.subjects.delete(this.subjects.keys().next().value);
+    return request;
+  }
   form(doc,id){
     const form=[...doc.forms].find(f=>new URL(f.getAttribute('action')||'/',location.origin).pathname===`/subject/${id}/interest/update`);
     if(!form)throw Error('未找到收藏表单，请检查登录状态');return form;
@@ -44,6 +52,24 @@ class Site {
   async items(config,page,priority=1){
     const url=new URL(listKey(config),location.origin);url.searchParams.set('page',page);
     const doc=await this.doc(url,priority);
+    if(config.kind==='timeline'){
+      if(!doc.querySelector('#timelineTabs'))throw Error('时间胶囊暂时不可用，可能需要通过网站验证');
+      const candidates=[...doc.querySelectorAll('li.tml_item')].map(li=>{
+        const link=li.querySelector('a[data-subject-id]'),id=link?.getAttribute('data-subject-id');
+        const score=Number(li.querySelector('.collectInfo .starlight')?.className.match(/\bstars(10|[1-9])\b/)?.[1]);
+        if(!score||!/^\d+$/.test(id||''))return null;
+        const card=li.querySelector('.card');
+        return {id,title:card?.querySelector('.title a')?.firstChild?.textContent.trim()||link.textContent.trim(),original:card?.querySelector('.subtitle')?.textContent.trim()||'',cover:card?.querySelector('img')?.getAttribute('src')||'',info:`对方评分 ${score} 分 · ${card?.querySelector('.info')?.textContent.trim()||''}`,rank:0,type:'anime'};
+      }).filter(Boolean);
+      const unique=[...new Map(candidates.map(item=>[item.id,item])).values()];
+      const checked=await Promise.all(unique.map(async item=>{
+        const subject=await this.subject(item.id,priority);
+        return subject.querySelector('#navMenuNeue > li > a.focus')?.getAttribute('href')==='/anime'?item:null;
+      }));
+      const result=checked.filter(Boolean);
+      result.hasNext=[...doc.querySelectorAll('a[href*="page="]')].some(a=>a.textContent.includes('下一页'));
+      return result;
+    }
     const list=doc.querySelector('#browserItemList');
     if(!list)throw Error('列表暂时不可用，可能需要通过网站验证');
     const items=[...list.children].map(li=>{
@@ -54,7 +80,7 @@ class Site {
   }
   async details(item,priority=1){
     const cover=new Image();if(item.cover)cover.src=item.cover;
-    const [collection,summary]=await Promise.all([this.collection(item.id,priority),this.doc('/subject/'+item.id,priority).then(doc=>doc.querySelector('#subject_summary')?.textContent.trim()||'暂无简介').catch(()=> '简介暂时无法加载，可打开详情查看。')]);
+    const [collection,summary]=await Promise.all([this.collection(item.id,priority),this.subject(item.id,priority).then(doc=>doc.querySelector('#subject_summary')?.textContent.trim()||'暂无简介').catch(()=> '简介暂时无法加载，可打开详情查看。')]);
     return {interest:collection.interest,rating:collection.rating,summary,cover};
   }
 }

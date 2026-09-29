@@ -1,4 +1,4 @@
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const CREDIT = '© 复旦沸点技术组-风吟雨';
 const TYPES = {anime:'动画',book:'书籍',game:'游戏',music:'音乐',real:'三次元'};
 const SORTS = {rank:'排名',trends:'热度',collects:'收藏',date:'日期',title:'名称'};
@@ -34,6 +34,11 @@ function validateSettings(value) {
 function listConfig(value) {
   const u=new URL(value,location.origin);
   if(!/^(bgm\.tv|bangumi\.tv|chii\.in)$/.test(u.hostname)) throw Error('只支持 Bangumi 列表地址');
+  const timeline=u.pathname.match(/^\/user\/([A-Za-z0-9_-]+)\/timeline\/?$/);
+  if(timeline){
+    if(u.searchParams.has('page')&&!/^\d+$/.test(u.searchParams.get('page')))throw Error('时间胶囊页码无效');
+    return {kind:'timeline',type:'anime',sort:'timeline',user:timeline[1],path:`/user/${timeline[1]}/timeline`,query:'type=subject'};
+  }
   const match=u.pathname.match(/^\/(anime|book|game|music|real)\/browser(?:\/.*)?$/);
   if(!match) throw Error('请输入分类浏览页地址（例如 /anime/browser/?sort=rank）');
   const params=new URLSearchParams();
@@ -41,7 +46,7 @@ function listConfig(value) {
   const sort=params.get('sort')||'rank';
   if(!SORTS[sort]) throw Error('不支持该排序');
   params.set('sort',sort); params.sort();
-  return {type:match[1],sort,path:u.pathname.replace(/\/$/,'')+'/',query:params.toString()};
+  return {kind:'browser',type:match[1],sort,path:u.pathname.replace(/\/$/,'')+'/',query:params.toString()};
 }
 const listKey = c => c.path+'?'+c.query;
 const defaultList=()=>listConfig('/anime/browser/?sort=rank');

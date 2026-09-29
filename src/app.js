@@ -22,9 +22,11 @@ async function boot(){
  function persist(){if(user)Storage.set(positionKey(),state);Storage.set('bqm:v2:last:'+user,listKey(config));}
  function showSource(){
    $('category').value=config.type==='book'&&config.path==='/book/browser/comic/'?'comic':config.type;
-   $('sort').value=config.sort;$('source-url').value=listKey(config);
-   $('source-title').textContent=`${TYPES[config.type]} · 按${SORTS[config.sort]}排序 · ${decodeURI(config.path)}`;
+   $('sort').value=config.kind==='timeline'?'rank':config.sort;$('source-url').value=listKey(config);
+   $('timeline-user').value=config.kind==='timeline'?config.user:'';
+   $('source-title').textContent=config.kind==='timeline'?`@${config.user} · 时间胶囊 · 已评分动画（最近优先）`:`${TYPES[config.type]} · 按${SORTS[config.sort]}排序 · ${decodeURI(config.path)}`;
    $('jump-label').textContent=config.sort==='rank'?'Rank':'列表第 N 项';
+   for(const id of ['jump-label','rank','jump'])$(id).hidden=config.kind==='timeline';
  }
  function applyControls(){
    const hints=[['back','上一部'],['skip','跳过'],['rate',`${done()} ${settings.score} 分`]].map(([a,t])=>settings.bindings[a].split(',').filter(Boolean).map(keyLabel).join(' / ')+' '+t);
@@ -60,10 +62,10 @@ async function boot(){
    const forward=items.slice(s.index+1,s.index+1+settings.ahead),backward=items.slice(Math.max(0,s.index-settings.behind),s.index);
    const active=()=>generation===prefetchGeneration&&opened&&!settingsOpen;
    try{
-     for(let p=s.page+1;forward.length<settings.ahead&&active();p++){
-       const list=await cache.list(c,p,2);if(!list.length)break;forward.push(...list.slice(0,settings.ahead-forward.length));
+     for(let p=s.page+1,scanned=0;forward.length<settings.ahead&&active()&&scanned++<8;p++){
+       const list=await cache.list(c,p,2);if(!list.length&&!list.hasNext)break;forward.push(...list.slice(0,settings.ahead-forward.length));
      }
-     for(let p=s.page-1;backward.length<settings.behind&&p>0&&active();p--){
+     for(let p=s.page-1,scanned=0;backward.length<settings.behind&&p>0&&active()&&scanned++<8;p--){
        const list=await cache.list(c,p,2);backward.unshift(...list.slice(-(settings.behind-backward.length)));
      }
      const targets=[...backward.reverse(),...forward];let index=0;
@@ -73,9 +75,14 @@ async function boot(){
  async function load({restore=false,skip=false}={}){
    ++prefetchGeneration;current=null;setStatus('正在加载作品…');
    items=await cache.list(config,state.page);
-   if(!items.length)throw Error('已到列表末尾或当前筛选没有作品，可返回上一部或切换列表');
-   if(state.page===1)pageSize=items.length;
-   else pageSize=(await cache.list(config,1)).length||24;
+   if(config.kind==='timeline'){
+     for(let scanned=0;!items.length&&items.hasNext&&scanned++<100;){state.page++;state.index=0;items=await cache.list(config,state.page);}
+   }
+   if(!items.length)throw Error('已到列表末尾或当前来源没有已评分动画，可返回上一部或切换列表');
+   if(config.kind!=='timeline'){
+     if(state.page===1)pageSize=items.length;
+     else pageSize=(await cache.list(config,1)).length||24;
+   }
    let relocated=false;
    if(restore&&state.id){
      let index=items.findIndex(i=>i.id===state.id);
@@ -94,14 +101,14 @@ async function boot(){
      const detail=await cache.detail(item);
      if(skip&&settings.skipDone&&detail.interest==='2'&&!queue.latest(item.id)&&skipped++<200){
        state.index++;state.id=null;
-       if(state.index>=items.length){const list=await cache.list(config,state.page+1);if(!list.length){state.index--;break;}state.page++;state.index=0;items=list;}
+       if(state.index>=items.length){let page=state.page+1,list=await cache.list(config,page);while(config.kind==='timeline'&&!list.length&&list.hasNext){page++;list=await cache.list(config,page);}if(!list.length){state.index--;break;}state.page=page;state.index=0;items=list;}
        continue;
      }
      current=item;state.id=item.id;persist();
      $('title').textContent=item.title;$('original').textContent=item.original;$('info').textContent=item.info;
      if(item.cover){$('cover').src=item.cover;$('cover').hidden=false;}else{$('cover').removeAttribute('src');$('cover').hidden=true;}
      const ordinal=(state.page-1)*pageSize+state.index+1;
-     $('position').textContent=`${item.rank?'Rank '+item.rank+' · ':''}列表第 ${ordinal} 项 · 第 ${state.page} 页 · ${state.index+1} / ${items.length}`;
+     $('position').textContent=config.kind==='timeline'?`时间胶囊第 ${state.page} 页 · 本页第 ${state.index+1} / ${items.length} 部`:`${item.rank?'Rank '+item.rank+' · ':''}列表第 ${ordinal} 项 · 第 ${state.page} 页 · ${state.index+1} / ${items.length}`;
      $('rank').value=config.sort==='rank'?(item.rank||''):ordinal;
      $('detail').href='/subject/'+item.id;$('summary').textContent=detail.summary;
      const labels={'1':'想'+{book:'读',game:'玩',music:'听'}[config.type],'2':done(),'3':'进行中','4':'搁置','5':'抛弃'};labels['1']=config.type==='anime'||config.type==='real'?'想看':labels['1'];
@@ -118,7 +125,7 @@ async function boot(){
  }
  async function back(){
    if(state.index>0)state={page:state.page,index:state.index-1,id:null};
-   else if(state.page>1){const list=await cache.list(config,state.page-1);state={page:state.page-1,index:list.length-1,id:null};}
+   else if(state.page>1){let page=state.page-1,list=await cache.list(config,page);while(config.kind==='timeline'&&!list.length&&page>1){page--;list=await cache.list(config,page);}if(!list.length){setStatus('已经是第一部');return;}state={page,index:list.length-1,id:null};}
    else{setStatus('已经是第一部');return;}
    await load();
  }
@@ -206,6 +213,13 @@ async function boot(){
  $('source-apply').onclick=()=>run(()=>switchSource(listConfig($('category').value==='comic'?`/book/browser/comic?sort=${$('sort').value}`:`/${$('category').value}/browser/?sort=${$('sort').value}`)));
  $('source-current').onclick=()=>run(()=>switchSource(listConfig(location.href)));
  $('source-url-apply').onclick=()=>run(()=>switchSource(listConfig($('source-url').value)));
+ $('timeline-apply').onclick=()=>run(()=>{
+   const input=$('timeline-user').value.trim();
+   if(!input)throw Error('请输入他人的用户名或时间胶囊地址');
+   const url=/^https?:\/\//i.test(input)?input:`/user/${encodeURIComponent(input)}/timeline`;
+   const source=listConfig(url);if(source.kind!=='timeline')throw Error('请输入时间胶囊地址');
+   return switchSource(source);
+ });
  const controller=new AbortController();
  document.addEventListener('keydown',e=>{
    if(!opened||e.isComposing)return;
