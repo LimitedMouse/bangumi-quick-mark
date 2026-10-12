@@ -1,9 +1,9 @@
-import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
-import {fileURLToPath} from 'node:url';
-import path from 'node:path';
-const root=fileURLToPath(new URL('../',import.meta.url));
-const pkg=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
-const metadata=`// ==UserScript==
+import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+const root = fileURLToPath(new URL("../", import.meta.url));
+const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const metadata = `// ==UserScript==
 // @name         Bangumi 快速补标
 // @namespace    local.bangumi.quickmark
 // @version      ${pkg.version}
@@ -25,17 +25,88 @@ const metadata=`// ==UserScript==
 // @noframes
 // ==/UserScript==
 `;
-const modules=['config','storage','site','queue','ui','app'];
-const license=await readFile(path.join(root,'LICENSE'),'utf8');
-const source=metadata+'/*\n'+license+'*/\n(() => {\n"use strict";\n'+(await Promise.all(modules.map(async m=>'\n// Module: '+m+'\n'+await readFile(path.join(root,'src',m+'.js'),'utf8')))).join('\n')+'\n})();\n';
-await writeFile(path.join(root,'bangumi-quick-mark.user.js'),source);
-if(process.argv.includes('--release')){
- const dest=path.join(root,'release','bangumi-quick-mark-'+pkg.version);await mkdir(dest,{recursive:true});
- for(const file of ['bangumi-quick-mark.user.js','README.md','CHANGELOG.md','PRIVACY.md','LICENSE','install.html'])await copyFile(path.join(root,file),path.join(dest,file));
- await mkdir(path.join(dest,'docs'),{recursive:true});
- for(const file of ['panel.png','settings.png'])await copyFile(path.join(root,'docs',file),path.join(dest,'docs',file));
- await mkdir(path.join(dest,'docs','install'),{recursive:true});
- for(const file of ['tampermonkey-menu.png','launch-button.png','quick-mark-panel.png'])await copyFile(path.join(root,'docs','install',file),path.join(dest,'docs','install',file));
- console.log('Release: '+dest);
+const modules = ["config", "storage", "editor", "site", "queue", "ui", "app"];
+const normalizeLines = (text) => text.replaceAll("\r\n", "\n");
+const license = normalizeLines(await readFile(path.join(root, "LICENSE"), "utf8"));
+const source =
+  metadata +
+  "/*\n" +
+  license +
+  '*/\n(() => {\n"use strict";\nconst VERSION = ' +
+  JSON.stringify(pkg.version) +
+  ";\n" +
+  (
+    await Promise.all(
+      modules.map(
+        async (m) =>
+          "\n// Module: " +
+          m +
+          "\n" +
+          normalizeLines(await readFile(path.join(root, "src", m + ".js"), "utf8")),
+      ),
+    )
+  ).join("\n") +
+  "\n})();\n";
+const scriptFile = path.join(root, "bangumi-quick-mark.user.js");
+const installFile = path.join(root, "install.html");
+const install = await readFile(installFile, "utf8");
+const updatedInstall = install.replace(
+  /(<span data-version>)[^<]*(<\/span>)/,
+  `$1${pkg.version}$2`,
+);
+if (
+  updatedInstall === install &&
+  !install.includes(`<span data-version>${pkg.version}</span>`)
+)
+  throw Error("安装页缺少版本标记");
+if (process.argv.includes("--check")) {
+  if (
+    normalizeLines(await readFile(scriptFile, "utf8")) !== source ||
+    install !== updatedInstall
+  )
+    throw Error("构建产物或安装页版本已过期，请运行 npm run build");
+} else {
+  await writeFile(scriptFile, source);
+  await writeFile(installFile, updatedInstall);
 }
-console.log('Built v'+pkg.version+' ('+Buffer.byteLength(source)+' bytes)');
+if (process.argv.includes("--release")) {
+  const dest = path.join(
+    root,
+    ".local",
+    "release",
+    "bangumi-quick-mark-" + pkg.version,
+  );
+  const distribution = [
+    "bangumi-quick-mark.user.js",
+    "README.md",
+    "CHANGELOG.md",
+    "PRIVACY.md",
+    "LICENSE",
+    "install.html",
+    "docs",
+  ];
+  const sources = [
+    ...distribution,
+    "package.json",
+    ".gitignore",
+    "RELEASING.md",
+    "src",
+    "scripts",
+    "tests",
+    ".github",
+  ];
+  async function copyFiles(files, target) {
+    await mkdir(target, { recursive: true });
+    for (const file of files)
+      await cp(path.join(root, file), path.join(target, file), {
+        recursive: true,
+      });
+  }
+  await copyFiles(distribution, dest);
+  // Publishable sources use the same metadata and tests, never local working copies.
+  await copyFiles(sources, path.join(dest, "source"));
+  console.log("Release: " + dest);
+}
+console.log(
+  "Built v" + pkg.version + " (" + Buffer.byteLength(source) + " bytes)",
+);

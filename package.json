@@ -1,18 +1,21 @@
 {
   "name": "bangumi-quick-mark",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node --check bangumi-quick-mark.user.js",
+    "check": "node scripts/check.mjs",
+    "test": "node --test tests/unit.test.mjs && node scripts/browser.mjs test",
+    "inject": "node scripts/browser.mjs inject",
     "package": "node scripts/build.mjs --release",
-    "serve": "node scripts/serve.mjs"
+    "serve": "node scripts/serve.mjs",
+    "test:unit": "node --test tests/unit.test.mjs"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/LimitedMouse/bangumi-quick-mark.git"
   },
-  "author": "复旦沸点技术组-风吟雨",
-  "license": "MIT"
+  "author": "复旦沸点技术组-风吟雨"
 }
